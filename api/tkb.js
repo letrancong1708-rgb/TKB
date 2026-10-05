@@ -32,10 +32,12 @@ module.exports = async (req, res) => {
         postUrl = BASE + best.path;
       }
       const post = await (await fetch(postUrl)).text();
-      const g = post.match(/https:\/\/docs\.google\.com\/spreadsheets\/d\/e\/[^"'\s<>)\]]+/);
-      if (!g) throw new Error('Bài không có link Google Sheets');
-      sheetUrl = g[0]; source = postUrl;
-    }
+      const all = [...new Set(post.match(/https:\/\/docs\.google\.com\/spreadsheets\/d\/e\/[^"'\s<>)\]]+/g) || [])];
+if (!all.length) throw new Error('Bài không có link Google Sheets');
+// Ưu tiên link nằm sau chữ "TKB lớp"; không có thì lấy link cuối cùng
+const idx = post.search(/TKB\s*l[ớo]p/i);
+const pick = (idx >= 0 && all.find(u => post.indexOf(u, idx) !== -1)) || all[all.length - 1];
+sheetUrl = pick; source = postUrl;
 
     const r = await fetch(toXlsx(sheetUrl));
     if (!r.ok) throw new Error('Google trả về ' + r.status);
