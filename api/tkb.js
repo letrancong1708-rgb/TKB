@@ -38,7 +38,7 @@ if (!all.length) throw new Error('Bài không có link Google Sheets');
 const idx = post.search(/TKB\s*l[ớo]p/i);
 const pick = (idx >= 0 && all.find(u => post.indexOf(u, idx) !== -1)) || all[all.length - 1];
 sheetUrl = pick; source = postUrl;
-
+    }
     const r = await fetch(toXlsx(sheetUrl));
     if (!r.ok) throw new Error('Google trả về ' + r.status);
     const buf = Buffer.from(await r.arrayBuffer());
