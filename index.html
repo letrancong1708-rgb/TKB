@@ -8,7 +8,7 @@
 <style>
   body{font-family:"Times New Roman",serif;margin:0;padding:16px;background:#fff;color:#000}
   .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px;font-family:system-ui,sans-serif}
-  select,input[type=file]{font-size:16px;padding:6px}
+  select,input,button{font-size:16px;padding:6px}
   h2{margin:4px 0 12px;font-family:system-ui,sans-serif;font-size:18px}
   .wrap{overflow-x:auto;margin-bottom:20px}
   table{border-collapse:collapse;width:100%;min-width:760px;font-size:15px}
@@ -22,7 +22,14 @@
 <body>
 <div class="bar">
   <label>Lớp: <select id="cls"></select></label>
-  <label>Xem file khác: <input type="file" id="file" accept=".xlsx,.xls"></label>
+</div>
+<div class="bar">
+  <label>Cách 1 - Tải file Excel: <input type="file" id="file" accept=".xlsx,.xls"></label>
+</div>
+<div class="bar">
+  <span>Cách 2 - Từ link:</span>
+  <input type="text" id="link" size="42" placeholder="Dán link bài TKB của trường (để trống = tuần mới nhất)">
+  <button id="go">Lấy từ link</button>
 </div>
 <h2 id="title"></h2>
 <div id="msg"></div>
@@ -109,8 +116,21 @@ document.getElementById('file').addEventListener('change', e=>{
   const f = e.target.files[0]; if(!f) return;
   f.arrayBuffer().then(b=>load(XLSX.read(b,{type:'array'})));
 });
-fetch('tkb.xlsx?v='+Date.now()).then(r=>r.arrayBuffer()).then(b=>load(XLSX.read(b,{type:'array'})))
-  .catch(()=>{ document.getElementById('msg').textContent='Không tải được tkb.xlsx'; });
+function fromLink(){
+  const u = document.getElementById('link').value.trim();
+  const msg = document.getElementById('msg');
+  msg.textContent = 'Đang tải...';
+  fetch('/api/tkb' + (u ? '?url=' + encodeURIComponent(u) : ''))
+    .then(r=>{ if(!r.ok) return r.json().then(j=>{ throw new Error(j.error||'Lỗi'); }); return r.arrayBuffer(); })
+    .then(b=>load(XLSX.read(b,{type:'array'})))
+    .catch(e=>{ msg.textContent = 'Không lấy được từ link: ' + e.message; });
+}
+document.getElementById('go').addEventListener('click', fromLink);
+// Mở trang: thử lấy tuần mới nhất, lỗi thì dùng tkb.xlsx đi kèm
+fetch('/api/tkb').then(r=>{ if(!r.ok) throw 0; return r; })
+  .catch(()=>fetch('tkb.xlsx?v='+Date.now()))
+  .then(r=>r.arrayBuffer()).then(b=>load(XLSX.read(b,{type:'array'})))
+  .catch(()=>{ document.getElementById('msg').textContent='Không tải được thời khóa biểu'; });
 </script>
 </body>
 </html>
