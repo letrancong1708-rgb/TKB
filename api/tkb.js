@@ -85,6 +85,7 @@ module.exports = async (req, res) => {
     res.setHeader('X-Source', encodeURI(source));
     res.status(200).send(buf);
   } catch (e) {
-    res.status(502).json({ error: String(e.message || e) });
+    const why = e.cause ? ' [' + (e.cause.code || e.cause.message) + ']' : '';
+    res.status(502).json({ error: String(e.message || e) + why });
   }
 };
