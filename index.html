@@ -16,6 +16,7 @@
   th{background:#5ffbff;font-weight:bold}
   td.k{background:#ffff66;font-weight:bold}
   td.tn{color:#1a3fd0}
+  #note{color:#555;font:13px system-ui,sans-serif;margin-bottom:6px}
   #msg{color:#b00;font-family:system-ui,sans-serif}
 </style>
 </head>
@@ -32,6 +33,7 @@
   <button id="go">Lấy từ link</button>
 </div>
 <h2 id="title"></h2>
+<div id="note"></div>
 <div id="msg"></div>
 <div id="out"></div>
 <script>
@@ -100,21 +102,59 @@ function render(){
   document.getElementById('out').innerHTML = table(cl,'S') + table(cl,'C');
 }
 
+// ---- Lưu file đã chọn vào trình duyệt (IndexedDB) ----
+const STORE = 'files', KEY = 'current';
+const idb = () => new Promise((ok, no) => {
+  const q = indexedDB.open('tkb', 1);
+  q.onupgradeneeded = () => q.result.createObjectStore(STORE);
+  q.onsuccess = () => ok(q.result);
+  q.onerror = () => no(q.error);
+});
+async function saveFile(buf, label){
+  try{
+    const d = await idb();
+    await new Promise((ok, no) => {
+      const t = d.transaction(STORE, 'readwrite');
+      t.objectStore(STORE).put({buf, label, time: Date.now()}, KEY);
+      t.oncomplete = ok; t.onerror = () => no(t.error);
+    });
+    showNote(label);
+  }catch(e){}
+}
+async function getSaved(){
+  try{
+    const d = await idb();
+    return await new Promise((ok, no) => {
+      const q = d.transaction(STORE).objectStore(STORE).get(KEY);
+      q.onsuccess = () => ok(q.result || null);
+      q.onerror = () => no(q.error);
+    });
+  }catch(e){ return null; }
+}
+function showNote(label){
+  document.getElementById('note').textContent = label ? 'Đang dùng: ' + label : '';
+}
+
 function load(wb){
   DB = parse(wb);
   const sel = document.getElementById('cls');
-  if(!DB.classes.length){ document.getElementById('msg').textContent='Không đọc được dữ liệu. Kiểm tra file có 2 sheet bắt đầu bằng "sáng" và "chiều".'; return; }
+  if(!DB.classes.length){ document.getElementById('msg').textContent='Không đọc được dữ liệu. Kiểm tra file có 2 sheet bắt đầu bằng "sáng" và "chiều".'; return false; }
   document.getElementById('msg').textContent='';
   let saved = ''; try{ saved = localStorage.getItem('lop')||''; }catch(e){}
   sel.innerHTML = DB.classes.map(c=>`<option>${c}</option>`).join('');
   if(DB.classes.includes(saved)) sel.value = saved;
   render();
+  return true;
 }
+
+const stamp = () => new Date().toLocaleString('vi-VN');
 
 document.getElementById('cls').addEventListener('change', render);
 document.getElementById('file').addEventListener('change', e=>{
   const f = e.target.files[0]; if(!f) return;
-  f.arrayBuffer().then(b=>load(XLSX.read(b,{type:'array'})));
+  f.arrayBuffer().then(b=>{
+    if(load(XLSX.read(b,{type:'array'}))) saveFile(b, 'file tải lên "' + f.name + '" (' + stamp() + ')');
+  });
 });
 function fromLink(){
   const u = document.getElementById('link').value.trim();
@@ -122,15 +162,23 @@ function fromLink(){
   msg.textContent = 'Đang tải...';
   fetch('/api/tkb' + (u ? '?url=' + encodeURIComponent(u) : ''))
     .then(r=>{ if(!r.ok) return r.json().then(j=>{ throw new Error(j.error||'Lỗi'); }); return r.arrayBuffer(); })
-    .then(b=>load(XLSX.read(b,{type:'array'})))
+    .then(b=>{
+      if(load(XLSX.read(b,{type:'array'}))) saveFile(b, (u ? 'file lấy từ link' : 'tuần mới nhất từ trường') + ' (' + stamp() + ')');
+    })
     .catch(e=>{ msg.textContent = 'Không lấy được từ link: ' + e.message; });
 }
 document.getElementById('go').addEventListener('click', fromLink);
-// Mở trang: thử lấy tuần mới nhất, lỗi thì dùng tkb.xlsx đi kèm
-fetch('/api/tkb').then(r=>{ if(!r.ok) throw 0; return r; })
-  .catch(()=>fetch('tkb.xlsx?v='+Date.now()))
-  .then(r=>r.arrayBuffer()).then(b=>load(XLSX.read(b,{type:'array'})))
-  .catch(()=>{ document.getElementById('msg').textContent='Không tải được thời khóa biểu'; });
+
+// Mở trang: có file đã lưu thì dùng luôn; chưa có thì thử lấy tuần mới nhất (không lưu), lỗi thì dùng tkb.xlsx đi kèm
+getSaved().then(s=>{
+  if(s && s.buf){
+    if(load(XLSX.read(s.buf,{type:'array'}))){ showNote(s.label); return; }
+  }
+  return fetch('/api/tkb').then(r=>{ if(!r.ok) throw 0; return r; })
+    .catch(()=>fetch('tkb.xlsx?v='+Date.now()))
+    .then(r=>r.arrayBuffer()).then(b=>load(XLSX.read(b,{type:'array'})))
+    .catch(()=>{ document.getElementById('msg').textContent='Không tải được thời khóa biểu'; });
+});
 </script>
 </body>
 </html>
