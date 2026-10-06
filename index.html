@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thời khóa biểu</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#17235c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TKB">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -274,9 +281,14 @@ function fromB64(b){
   for(let i=0;i<s.length;i++) u[i] = s.charCodeAt(i);
   return u.buffer;
 }
-async function publish(buf, label){
+async function publish(buf, label, retried){
   try{
-    const r = await fetch('/api/shared', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label, b64: toB64(buf)})});
+    let code = ''; try{ code = localStorage.getItem('editcode')||''; }catch(e){}
+    const r = await fetch('/api/shared', {method:'POST', headers:{'Content-Type':'application/json','X-Edit-Code':code}, body: JSON.stringify({label, b64: toB64(buf)})});
+    if(r.status === 401 && !retried){
+      const c = prompt('Nhập mã cập nhật để chia sẻ TKB cho mọi người (bỏ trống = chỉ dùng trên máy này):');
+      if(c){ try{ localStorage.setItem('editcode', c.trim()); }catch(e){} return publish(buf, label, true); }
+    }
     if(!r.ok){ const j = await r.json().catch(()=>({})); throw new Error(j.error || ('Lỗi ' + r.status)); }
     showNote(label + ' — đã chia sẻ cho mọi người');
   }catch(e){
@@ -353,6 +365,9 @@ function init(){ return getShared().then(sh=>{
 const Q = new URLSearchParams(location.search).get('sheet');
 if(Q){ document.getElementById('link').value = Q; fromLink().then(ok=>{ history.replaceState(null,'',location.pathname); if(!ok) init(); }); }
 else init();
+
+// Đăng ký service worker để cài được như app (PWA/APK)
+if('serviceWorker' in navigator){ window.addEventListener('load', ()=>{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }); }
 
 // Nút dấu trang: bấm khi đang mở bài TKB của trường sẽ tự tìm link Google Sheets trong mã nguồn trang
 document.getElementById('bm').href = "javascript:(function(){var m=document.documentElement.innerHTML.match(/2PACX-[\\w-]+/);if(!m){alert('Không tìm thấy link Google Sheets trong trang này');return}location.href='" + location.origin + "/?sheet='+m[0]})()";
