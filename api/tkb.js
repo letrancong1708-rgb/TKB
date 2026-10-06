@@ -22,10 +22,48 @@ const findIds = html => [...new Set(
   (norm(html).match(/spreadsheets\/d\/e\/(2PACX-[\w-]+)/g) || []).map(x => x.split('/').pop())
 )];
 
-const getText = async u => {
-  const r = await fetch(u, { headers: HEAD });
-  if (!r.ok) throw new Error('Trang trường trả về ' + r.status);
+const http = require('http'), https = require('https');
+
+// Kết nối trực tiếp, ép IPv4 (nhiều web VN không có/lỗi IPv6 nên fetch mặc định bị timeout)
+const rawGet = (u, ms, hops = 0) => new Promise((ok, no) => {
+  const lib = u.startsWith('https') ? https : http;
+  const req = lib.get(u, { headers: HEAD, family: 4, timeout: ms }, res => {
+    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && hops < 4) {
+      res.resume();
+      return ok(rawGet(new URL(res.headers.location, u).href, ms, hops + 1));
+    }
+    if (res.statusCode !== 200) { res.resume(); return no(new Error('Trang trường trả về ' + res.statusCode)); }
+    const c = [];
+    res.on('data', d => c.push(d));
+    res.on('end', () => ok(Buffer.concat(c).toString('utf8')));
+  });
+  req.on('timeout', () => req.destroy(new Error('timeout')));
+  req.on('error', no);
+});
+
+const viaFetch = async (url, ms) => {
+  const r = await fetch(url, { headers: HEAD, signal: AbortSignal.timeout(ms) });
+  if (!r.ok) throw new Error('trả về ' + r.status);
   return r.text();
+};
+
+const getText = async u => {
+  const alt = u.startsWith('http://') ? u.replace('http://', 'https://') : u.replace('https://', 'http://');
+  const tries = [
+    ['trực tiếp', () => rawGet(u, 9000)],
+    ['proxy 1', () => viaFetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(u), 12000)],
+    ['proxy 2', () => viaFetch('https://corsproxy.io/?' + encodeURIComponent(u), 12000)],
+    ['https/http khác', () => rawGet(alt, 9000)]
+  ];
+  const errs = [];
+  for (const [name, fn] of tries) {
+    try {
+      const t = await fn();
+      if (t.length < 500) throw new Error('nội dung quá ngắn');
+      return t;
+    } catch (e) { errs.push(name + ': ' + (e.cause && (e.cause.code || e.cause.message) || e.message)); }
+  }
+  throw new Error('Không đọc được trang trường (' + errs.join('; ') + ')');
 };
 
 module.exports = async (req, res) => {
