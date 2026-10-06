@@ -48,6 +48,11 @@ module.exports = async (req, res) => {
     }
 
     if (req.method === 'POST') {
+      // Mã cập nhật: đặt biến môi trường TKB_EDIT_CODE trên Vercel. Chưa đặt thì ai cũng ghi được.
+      const need = process.env.TKB_EDIT_CODE || '';
+      if (need && String(req.headers['x-edit-code'] || '') !== need) {
+        return res.status(401).json({ error: 'Sai hoặc thiếu mã cập nhật' });
+      }
       let body = req.body;
       if (typeof body === 'string') body = JSON.parse(body);
       const b64 = body && body.b64;
