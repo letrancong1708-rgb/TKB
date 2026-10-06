@@ -93,8 +93,13 @@ button{font:inherit;font-weight:700;font-size:15px;background:var(--accent);colo
   </div>
   <div class="bar">
     <span>Hoặc lấy từ link:</span>
-    <input type="text" id="link" size="40" placeholder="Dán link bài TKB của trường (để trống = tuần mới nhất)">
+    <input type="text" id="link" size="40" placeholder="Dán link Google Sheets hoặc link bài của trường (để trống = tuần mới nhất)">
     <button id="go">Lấy từ link</button>
+  </div>
+  <div class="bar">
+    <span>Cách nhanh:</span>
+    <a id="bm" href="#" style="font-weight:700;color:var(--accent)" onclick="return false">Lấy TKB từ trang trường</a>
+    <small style="color:var(--muted)">Kéo nút này lên thanh dấu trang. Mở bài TKB của trường rồi bấm nó, trang sẽ tự lấy link Google Sheets.</small>
   </div>
 </details>
 <div id="msg"></div>
@@ -308,21 +313,47 @@ document.getElementById('file').addEventListener('change', e=>{
     if(load(XLSX.read(b,{type:'array'}))){ const lb = 'file tải lên "' + f.name + '" (' + stamp() + ')'; saveFile(b, lb); publish(b, lb); }
   });
 });
-function fromLink(){
-  const u = document.getElementById('link').value.trim();
+const api = x => '/api/tkb' + (x ? '?url=' + encodeURIComponent(x) : '');
+// Đọc bài của trường qua proxy công khai ngay từ trình duyệt, tìm mã Google Sheets trong mã nguồn
+async function viaProxy(u){
+  for(const p of ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?']){
+    try{
+      const r = await fetch(p + encodeURIComponent(u), {signal: AbortSignal.timeout(12000)});
+      if(!r.ok) continue;
+      const m = (await r.text()).match(/2PACX-[\w-]+/);
+      if(m) return m[0];
+    }catch(e){}
+  }
+  return null;
+}
+async function fromLink(){
+  let u = document.getElementById('link').value.trim();
+  const m = u.match(/2PACX-[\w-]+/);   // dán link Sheets, link bài, hoặc cả mã nguồn trang đều được
+  if(m) u = 'https://docs.google.com/spreadsheets/d/e/' + m[0] + '/pubhtml';
   const msg = document.getElementById('msg');
   msg.textContent = 'Đang tải...';
-  fetch('/api/tkb' + (u ? '?url=' + encodeURIComponent(u) : ''))
-    .then(r=>{ if(!r.ok) return r.json().then(j=>{ throw new Error(j.error||'Lỗi'); }); return r.arrayBuffer(); })
-    .then(b=>{
-      if(load(XLSX.read(b,{type:'array'}))){ const lb = (u ? 'file lấy từ link' : 'tuần mới nhất từ trường') + ' (' + stamp() + ')'; saveFile(b, lb); publish(b, lb); }
-    })
-    .catch(e=>{ msg.textContent = 'Không lấy được từ link: ' + e.message; });
+  try{
+    let r = await fetch(api(u));
+    if(!r.ok){
+      const j = await r.json().catch(()=>({}));
+      const err = j.error || ('Lỗi ' + r.status);
+      if(!/thptchauphong/.test(u)) throw new Error(err);
+      msg.textContent = 'Đang tìm link Google Sheets trong bài của trường...';
+      const id = await viaProxy(u);
+      if(!id) throw new Error(err);
+      u = 'https://docs.google.com/spreadsheets/d/e/' + id + '/pubhtml';
+      r = await fetch(api(u));
+      if(!r.ok){ const j2 = await r.json().catch(()=>({})); throw new Error(j2.error || ('Lỗi ' + r.status)); }
+    }
+    const b = await r.arrayBuffer();
+    if(load(XLSX.read(b,{type:'array'}))){ const lb = (u ? 'file lấy từ link' : 'tuần mới nhất từ trường') + ' (' + stamp() + ')'; saveFile(b, lb); publish(b, lb); return true; }
+    return false;
+  }catch(e){ msg.textContent = 'Không lấy được từ link: ' + e.message; return false; }
 }
 document.getElementById('go').addEventListener('click', fromLink);
 
 // Mở trang: có file đã lưu thì dùng luôn; chưa có thì thử lấy tuần mới nhất (không lưu), lỗi thì dùng tkb.xlsx đi kèm
-getShared().then(sh=>{
+function init(){ return getShared().then(sh=>{
   if(sh && load(XLSX.read(fromB64(sh.b64),{type:'array'}))){ showNote(sh.label + ' — bản chung'); return; }
   return getSaved();
 }).then(s=>{
@@ -335,6 +366,13 @@ getShared().then(sh=>{
     .then(r=>r.arrayBuffer()).then(b=>load(XLSX.read(b,{type:'array'})))
     .catch(()=>{ document.getElementById('msg').textContent='Không tải được thời khóa biểu'; });
 });
+}
+const Q = new URLSearchParams(location.search).get('sheet');
+if(Q){ document.getElementById('link').value = Q; fromLink().then(ok=>{ history.replaceState(null,'',location.pathname); if(!ok) init(); }); }
+else init();
+
+// Nút dấu trang: bấm khi đang mở bài TKB của trường sẽ tự tìm link Google Sheets trong mã nguồn trang
+document.getElementById('bm').href = "javascript:(function(){var m=document.documentElement.innerHTML.match(/2PACX-[\\w-]+/);if(!m){alert('Không tìm thấy link Google Sheets trong trang này');return}location.href='" + location.origin + "/?sheet='+m[0]})()";
 </script>
 </body>
 </html>
