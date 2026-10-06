@@ -1,1 +1,1 @@
-{"scripts":{}}
+{"name":"tkb","version":"1.0.0","engines":{"node":">=18"},"dependencies":{"ioredis":"^5.4.1"}}
