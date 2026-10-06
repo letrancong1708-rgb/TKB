@@ -314,18 +314,6 @@ document.getElementById('file').addEventListener('change', e=>{
   });
 });
 const api = x => '/api/tkb' + (x ? '?url=' + encodeURIComponent(x) : '');
-// Đọc bài của trường qua proxy công khai ngay từ trình duyệt, tìm mã Google Sheets trong mã nguồn
-async function viaProxy(u){
-  for(const p of ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?']){
-    try{
-      const r = await fetch(p + encodeURIComponent(u), {signal: AbortSignal.timeout(12000)});
-      if(!r.ok) continue;
-      const m = (await r.text()).match(/2PACX-[\w-]+/);
-      if(m) return m[0];
-    }catch(e){}
-  }
-  return null;
-}
 async function fromLink(){
   let u = document.getElementById('link').value.trim();
   const m = u.match(/2PACX-[\w-]+/);   // dán link Sheets, link bài, hoặc cả mã nguồn trang đều được
@@ -337,13 +325,8 @@ async function fromLink(){
     if(!r.ok){
       const j = await r.json().catch(()=>({}));
       const err = j.error || ('Lỗi ' + r.status);
-      if(!/thptchauphong/.test(u)) throw new Error(err);
-      msg.textContent = 'Đang tìm link Google Sheets trong bài của trường...';
-      const id = await viaProxy(u);
-      if(!id) throw new Error(err);
-      u = 'https://docs.google.com/spreadsheets/d/e/' + id + '/pubhtml';
-      r = await fetch(api(u));
-      if(!r.ok){ const j2 = await r.json().catch(()=>({})); throw new Error(j2.error || ('Lỗi ' + r.status)); }
+      if(/thptchauphong/.test(u)) throw new Error(err + '. Cách khác: mở bài của trường rồi bấm nút dấu trang "Lấy TKB từ trang trường" (trong mục Cập nhật thời khóa biểu), hoặc dán link Google Sheets vào ô này.');
+      throw new Error(err);
     }
     const b = await r.arrayBuffer();
     if(load(XLSX.read(b,{type:'array'}))){ const lb = (u ? 'file lấy từ link' : 'tuần mới nhất từ trường') + ' (' + stamp() + ')'; saveFile(b, lb); publish(b, lb); return true; }
